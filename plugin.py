@@ -86,7 +86,7 @@ class EVESpai(callbacks.Plugin):
             irc.error('Could not connect to sde database. "{0}"'.format(e))
 
         if self.registryValue('corporation') == '':
-            irc.error('EVESpai requires')
+            irc.error('EVESpai requires that you set a corporation')
         try:
             cur = self.stationspinner.cursor()
             cur.execute("""
@@ -155,7 +155,7 @@ class EVESpai(callbacks.Plugin):
         """
         try:
             name = self._get_locationID(locationName)
-            irc.reply(name)
+            irc.reply(name, prefixNick=False)
         except:
             irc.error('Unknown location')
 
@@ -168,7 +168,7 @@ class EVESpai(callbacks.Plugin):
         """
         try:
             name = self._get_location(locationID)['itemName']
-            irc.reply(name)
+            irc.reply(name, prefixNick=False)
         except:
             irc.error('Unknown location')
 
@@ -181,7 +181,7 @@ class EVESpai(callbacks.Plugin):
         """
         try:
             name = self._get_type(typeID)['typeName']
-            irc.reply(name)
+            irc.reply(name, prefixNick=False)
         except:
             irc.error('Unknown type')
 
@@ -215,7 +215,7 @@ class EVESpai(callbacks.Plugin):
             tq_time.time(),
             SERVER_STATUS[status.serverOpen],
             status.onlinePlayers
-        ))
+        ), prefixNick=False)
 
     evetime = wrap(evetime, [])
     status = wrap(evetime, [])
@@ -263,15 +263,14 @@ class EVESpai(callbacks.Plugin):
             3: 	'Reinforced',           # Until time = stateTimestamp.
             4: 	'Online' 	            # Continuously since time = onlineTimestamp.
         }
-        output = []
         locations = {}
         if system:
             locations[solar_system['solarSystemID']] = solar_system
             irc.reply('Found {0} starbases in {1}'.format(
                              count,
-                             solar_system['solarSystemName']))
+                             solar_system['solarSystemName']), prefixNick=False)
         else:
-            irc.reply('Found {0} starbases'.format(count))
+            irc.reply('Found {0} starbases'.format(count), prefixNick=False)
 
         for row in rows:
             try:
@@ -296,7 +295,7 @@ class EVESpai(callbacks.Plugin):
                              self._get_location(row['moonID'])['itemName'], #moon
                              self._get_type(int(row['typeID']))['typeName'], #pos type
                              state #offline/online
-                             ))
+                             ), prefixNick=False)
 
 
     pos = wrap(pos, [optional('channel'), optional('text')])
@@ -328,7 +327,7 @@ class EVESpai(callbacks.Plugin):
                     row['name'],
                     row['location'],
                     ship
-                ))
+                ), prefixNick=False)
         else:
             irc.reply('Found 0 characters with a name like "{0}"'.format(character))
     whereis = wrap(whereis, [optional('channel'), 'text'])
@@ -357,13 +356,14 @@ class EVESpai(callbacks.Plugin):
             irc.reply('{0} last updated {1}'.format(
                 call['name'],
                 update['last_update']
-            ))
+            ), prefixNick=False)
     cache = wrap(cache, [optional('channel'), 'text'])
 
-    def whoat(self, irc, msg, args, channel, system):
-        """[<channel>] <system>
+    def whoat(self, irc, msg, args, channel, optlist, system):
+        """[<channel>] [--all] <system>
 
-        List all characters and their ships in <system>
+        List characters and their ships in <system>. If --all is given, ignore the max lines
+        limitation.
         """
         if not self.registryValue('full_access', channel):
             irc.reply('Concord denies you access on this channel!')
@@ -379,7 +379,7 @@ class EVESpai(callbacks.Plugin):
 
         rows = sp.fetchall()
 
-        if len(rows) <= self.registryValue('max_lines', channel) \
+        if len(rows) <= self.registryValue('max_lines', channel) or ('all', True) in optlist \
                 and len(rows) > 0:
             for row in rows:
                 if row['shipType'] == 'Unknown Type':
@@ -390,25 +390,29 @@ class EVESpai(callbacks.Plugin):
                     row['name'],
                     row['location'],
                     ship
-                ))
+                ), prefixNick=False)
         elif len(rows) > self.registryValue('max_lines', channel):
             irc.reply('Found {0} characters in "{1}", but will not name them all'.format(
                 len(rows), system
-            ))
+            ), prefixNick=False)
         else:
             irc.reply('Found 0 characters in "{0}"'.format(
                 system
-            ))
-    whoat = wrap(whoat, [optional('channel'), 'text'])
+            ), prefixNick=False)
+    whoat = wrap(whoat, [optional('channel'),
+                         getopts({'all': ''}),
+                         'text'])
 
-    def ship(self, irc, msg, args, channel, shiptype):
-        """[<channel>] <shiptype>
+    def ship(self, irc, msg, args, channel, optlist, shiptype):
+        """[<channel>] [--all] <shiptype>
 
-        List all characters in <shiptype>
+        List characters in <shiptype>. If --all is given, ignore the max lines
+        limitation.
         """
         if not self.registryValue('full_access', channel):
             irc.reply('Concord denies you access on this channel!')
             return
+        print optlist
 
         sp = self.stationspinner.cursor(cursor_factory=psycopg2.extras.DictCursor)
         sde = self.sde.cursor(cursor_factory=psycopg2.extras.DictCursor)
@@ -417,12 +421,12 @@ class EVESpai(callbacks.Plugin):
         WHERE "categoryID"=6 and "groupName" ILIKE %s""", ['%%{0}%%'.format(shiptype)])
         rows = sde.fetchall()
         if len(rows) == 0:
-            irc.reply('Unknown shiptype')
+            irc.reply('Unknown shiptype', prefixNick=False)
             return
         elif len(rows) > 1:
             irc.reply('Found more than one shiptype: "{0}". Be more specific'.format(
                 [r['groupName'] for r in rows]
-            ))
+            ), prefixNick=False)
             return
 
         shiptype = rows[0]
@@ -438,12 +442,12 @@ class EVESpai(callbacks.Plugin):
                    [self.corporationID, tuple(typeIDs)])
         rows = sp.fetchall()
 
-        if len(rows) <= self.registryValue('max_lines', channel) \
+        if (len(rows) <= self.registryValue('max_lines', channel) or ('all', True) in optlist) \
                 and len(rows) > 0:
             irc.reply('Found {0} characters in {1}'.format(
                 len(rows),
                 shiptype['groupName']
-            ))
+            ), prefixNick=False)
             for row in rows:
                 if row['shipType'] == 'Unknown Type':
                     ship = 'Pod'
@@ -453,18 +457,20 @@ class EVESpai(callbacks.Plugin):
                     row['name'],
                     row['location'],
                     ship
-                ))
+                ), prefixNick=False)
         elif len(rows) > self.registryValue('max_lines', channel):
             irc.reply('Found {0} characters in {1}, but will not name them all'.format(
                 len(rows),
                 shiptype['groupName']
-            ))
+            ), prefixNick=False)
         else:
             irc.reply('Found {0} characters in {1}'.format(
                 len(rows),
                 shiptype['groupName']
-            ))
-    ship = wrap(ship, [optional('channel'), 'text'])
+            ), prefixNick=False)
+    ship = wrap(ship, [optional('channel'),
+                       getopts({'all': ''}),
+                               'text'])
 
     def chars(self, irc, msg, args, channel, user):
         """[<channel>] <user>
@@ -492,7 +498,8 @@ class EVESpai(callbacks.Plugin):
         chars = sp.fetchall()
 
         if len(chars) == 0:
-            irc.reply('User "{0}" has 0 characters registered'.format(user['username']))
+            irc.reply('User "{0}" has 0 characters registered'.format(user['username']),
+                      prefixNick=False)
         else:
             output = []
             for char in chars:
@@ -503,7 +510,7 @@ class EVESpai(callbacks.Plugin):
             irc.reply('Found {0} characters: {1}'.format(
                 len(chars),
                 ", ".join(output)
-            ))
+            ), prefixNick=False)
     chars = wrap(chars, [optional('channel'), 'text'])
 
 

@@ -74,7 +74,7 @@ conf.registerChannelValue(EVESpai, 'full_access',
                          registry.Boolean(False,
                          'Channels with full access'))
 conf.registerChannelValue(EVESpai, 'max_lines',
-                         registry.Integer(15,
+                         registry.Integer(30,
                          'Maxium number of lines to reply with'))
 conf.registerGlobalValue(EVESpai, 'corporation',
                          registry.String ('', 'Corporation to get data for \
