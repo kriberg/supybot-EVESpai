@@ -513,6 +513,49 @@ class EVESpai(callbacks.Plugin):
             ), prefixNick=False)
     chars = wrap(chars, [optional('channel'), 'text'])
 
+    def price(self, irc, msg, args, optlist, typeName):
+        """[--location=(<solarsystem>|<region>)] <typeName>
+
+        Get price of an item at Jita or at a specific solar system/region.
+        """
+        try:
+            typeID = self._get_typeID(typeName)
+        except:
+            irc.error('Unknown type')
+
+        if len(optlist) == 1:
+            location = optlist[0][1]
+        else:
+            location = 'Jita'
+
+        try:
+            locationID = self._get_locationID(location)
+        except:
+            irc.error('Unknown location')
+
+        sp = self.stationspinner.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        sp.execute("""
+        SELECT * FROM evecentral_market
+        WHERE "locationID"=%s""", [locationID])
+        rows = sp.fetchall()
+        if len(rows) == 0:
+            irc.reply('No data for that market')
+            return
+
+        sp.execute("""
+        SELECT * FROM evecentral_marketitem
+        WHERE "locationID"=%s AND "typeID"=%s""", [locationID, typeID])
+        marketitem = sp.fetchone()
+        irc.reply('buy max: {0} (volume: {1}). sell min: {2} (volume: {3}).'.format(
+            marketitem['buy_max'],
+            int(marketitem['buy_volume']),
+            marketitem['sell_min'],
+            int(marketitem['sell_volume']),
+        ))
+
+    price = wrap(price, [getopts({'location': 'text'}),
+                                    'text'])
+
 
 
 
