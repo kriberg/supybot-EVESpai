@@ -131,6 +131,14 @@ class EVESpai(callbacks.Plugin):
         cur.close()
         return row
 
+    def _get_location_by_name(self, locationName):
+        cur = self.sde.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        cur.execute("""SELECT * FROM "mapDenormalize"
+        WHERE "itemName" ILIKE %s""", [locationName])
+        row= cur.fetchone()
+        cur.close()
+        return row
+
     def _get_typeID(self, type_name):
         cur = self.sde.cursor(cursor_factory=psycopg2.extras.DictCursor)
         cur.execute("""SELECT "typeID" FROM "invTypes"
@@ -146,6 +154,23 @@ class EVESpai(callbacks.Plugin):
         row= cur.fetchone()
         cur.close()
         return row
+
+    def _colorize_system(self, location):
+        security = location['security']
+        if 'solarSystemName' in location:
+            name = location['solarSystemName']
+        else:
+            name = location['itemName']
+        if security >= 0.8:
+            return ircutils.mircColor(name, fg='teal')
+        elif security < 0.8 and security >= 0.6:
+            return ircutils.mircColor(name, fg='light green')
+        elif security < 0.6 and security >= 0.5:
+            return ircutils.mircColor(name, fg='yellow')
+        elif security < 0.5 and security >= 0.1:
+            return ircutils.mircColor(name, fg='orange')
+        elif security < 0.1:
+            return ircutils.mircColor(name, fg='red')
 
 
     def locationid(self, irc, msg, args, locationName):
@@ -267,8 +292,9 @@ class EVESpai(callbacks.Plugin):
         if system:
             locations[solar_system['solarSystemID']] = solar_system
             irc.reply('Found {0} starbases in {1}'.format(
-                             count,
-                             solar_system['solarSystemName']), prefixNick=False)
+                             ircutils.bold(count),
+                             self._colorize_system(solar_system)),
+                      prefixNick=False)
         else:
             irc.reply('Found {0} starbases'.format(count), prefixNick=False)
 
@@ -291,7 +317,7 @@ class EVESpai(callbacks.Plugin):
 
             irc.reply('{0} :: {1} :: {2} :: {3} :: {4}'.format(
                              region['itemName'],
-                             solar_system['solarSystemName'], #solarsystem
+                             self._colorize_system(solar_system), #solarsystem
                              self._get_location(row['moonID'])['itemName'], #moon
                              self._get_type(int(row['typeID']))['typeName'], #pos type
                              state #offline/online
@@ -324,8 +350,8 @@ class EVESpai(callbacks.Plugin):
                 else:
                     ship = row['shipType']
                 irc.reply('{0} :: {1} :: {2}'.format(
-                    row['name'],
-                    row['location'],
+                    ircutils.bold(row['name']),
+                    self._colorize_system(self._get_location_by_name(row['location'])),
                     ship
                 ), prefixNick=False)
         else:
@@ -387,8 +413,8 @@ class EVESpai(callbacks.Plugin):
                 else:
                     ship = row['shipType']
                 irc.reply('{0} :: {1} :: {2}'.format(
-                    row['name'],
-                    row['location'],
+                    ircutils.bold(row['name']),
+                    self._colorize_system(self._get_location_by_name(row['location'])),
                     ship
                 ), prefixNick=False)
         elif len(rows) > self.registryValue('max_lines', channel):
@@ -454,8 +480,8 @@ class EVESpai(callbacks.Plugin):
                 else:
                     ship = row['shipType']
                 irc.reply('{0} :: {1} :: {2}'.format(
-                    row['name'],
-                    row['location'],
+                    ircutils.bold(row['name']),
+                    self._colorize_system(self._get_location_by_name(row['location'])),
                     ship
                 ), prefixNick=False)
         elif len(rows) > self.registryValue('max_lines', channel):
@@ -520,6 +546,7 @@ class EVESpai(callbacks.Plugin):
         """
         try:
             typeID = self._get_typeID(typeName)
+            itemType = self._get_type(typeID)
         except:
             irc.error('Unknown type')
 
@@ -530,6 +557,7 @@ class EVESpai(callbacks.Plugin):
 
         try:
             locationID = self._get_locationID(location)
+            location = self._get_location(locationID)
         except:
             irc.error('Unknown location')
 
@@ -537,21 +565,33 @@ class EVESpai(callbacks.Plugin):
         sp.execute("""
         SELECT * FROM evecentral_market
         WHERE "locationID"=%s""", [locationID])
-        rows = sp.fetchall()
-        if len(rows) == 0:
-            irc.reply('No data for that market')
+        market = sp.fetchone()
+        if not market:
+            irc.reply('No data for that market location')
             return
 
         sp.execute("""
         SELECT * FROM evecentral_marketitem
         WHERE "locationID"=%s AND "typeID"=%s""", [locationID, typeID])
         marketitem = sp.fetchone()
-        irc.reply('buy max: {0} (volume: {1}). sell min: {2} (volume: {3}).'.format(
-            marketitem['buy_max'],
-            int(marketitem['buy_volume']),
-            marketitem['sell_min'],
-            int(marketitem['sell_volume']),
-        ))
+        if marketitem:
+            irc.reply('{0} in {1}: buy max: {2} (volume: {3:,d}). sell min: {4} (volume: {5:,d}).'.format(
+                ircutils.bold(itemType['typeName']),
+                self._colorize_system(location),
+                ircutils.mircColor(
+                    '{:,.2f}'.format(marketitem['buy_max']),
+                    fg='green'),
+                int(marketitem['buy_volume']),
+                ircutils.mircColor(
+                    '{:,.2f}'.format(marketitem['sell_min']),
+                    fg='green'),
+                int(marketitem['sell_volume']),
+            ), prefixNick=False)
+        else:
+            irc.reply("Prices for {0} in {1} isn't updated yet.".format(
+                itemType['typeName'],
+                location['itemName']
+            ))
 
     price = wrap(price, [getopts({'location': 'text'}),
                                     'text'])
