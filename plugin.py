@@ -40,23 +40,18 @@ import psycopg2.extras
 import eveapi
 import datetime
 
-# Found the following commands for #evolution
-# !stop :: Remove any buffered output for a channel
-# !whereat :: Display all pilots in the specified system.
-# !help :: List all available commands
-# !sov :: Report sovereignty in selected target
-# !whois :: Find the owner of the specified character
-# !ship :: Returns all pilots flying a specific ship(type)
-# !chars :: Determine the characters of an owner
-# !gates :: List gates in the specified system
-# !evetime :: Returns the current time in EVE
-# !pos :: Search for starbases at the given location
-
 
 class EVESpai(callbacks.Plugin):
     """
     EVESpai commands:
-    'pos [<system>]' Lists all POSes. Otionally, only POSes in <system>
+    'pos [<system>]' Lists all POSes.
+    'evetime' Get current time on Tranquility.
+    'whereis <character>' List the location and currently boarded ship of <character>.
+    'cache <calltype>' List the cache time of given call type.
+    'whoat <system>' List characters and their ships in <system>. If --all is given, ignore the max lines limitation.
+    'ship <shiptype>' List characters in <shiptype>.
+    'chars <user>' List all characters belonging to <user>
+    'price [--location=(<solarsystem>|<region>)] <typeName>' List buy/sell/volume of <type> in <location>, defaults to JIta.
     """
     threaded = True
 
@@ -233,11 +228,11 @@ class EVESpai(callbacks.Plugin):
         status = api.server.ServerStatus()
         tq_time = datetime.datetime.utcfromtimestamp(status._meta.currentTime)
         SERVER_STATUS = {
-            'True': 'online',
-            'False': 'offline'
+            'True': ircutils.mircColor('online', fg='green'),
+            'False': ircutils.mircColor('offline', fg='red'),
         }
-        irc.reply('{0}, Tranquility is {1} with {2} players logged in'.format(
-            tq_time.time(),
+        irc.reply('{0}, Tranquility is {1} with {2:,d} players logged in'.format(
+            ircutils.bold(tq_time.time()),
             SERVER_STATUS[status.serverOpen],
             status.onlinePlayers
         ), prefixNick=False)
@@ -280,13 +275,13 @@ class EVESpai(callbacks.Plugin):
         sp.close()
 
         STATES = {
-            0: 	'Unanchored',           # Also unanchoring? Has valid stateTimestamp.
+            0: 	ircutils.mircColor('Unanchored', fg='teal'),           # Also unanchoring? Has valid stateTimestamp.
                                         # Note that moonID is zero for unanchored Towers, but
                                         # locationID will still yield the solar system ID.
-            1: 	'Anchored/Offline',     # No time information stored.
-            2: 	'Onlining', 	        # Will be online at time = onlineTimestamp.
-            3: 	'Reinforced',           # Until time = stateTimestamp.
-            4: 	'Online' 	            # Continuously since time = onlineTimestamp.
+            1: 	ircutils.mircColor('Anchored/Offline', fg='orange'),     # No time information stored.
+            2: 	ircutils.mircColor('Onlining', fg='light green'), 	        # Will be online at time = onlineTimestamp.
+            3: 	ircutils.mircColor('Reinforced', fg='red'),           # Until time = stateTimestamp.
+            4: 	ircutils.mircColor('Online', fg='green') 	            # Continuously since time = onlineTimestamp.
         }
         locations = {}
         if system:
@@ -544,11 +539,14 @@ class EVESpai(callbacks.Plugin):
 
         Get price of an item at Jita or at a specific solar system/region.
         """
+        print optlist
+
         try:
             typeID = self._get_typeID(typeName)
             itemType = self._get_type(typeID)
         except:
             irc.error('Unknown type')
+            return
 
         if len(optlist) == 1:
             location = optlist[0][1]
@@ -560,6 +558,7 @@ class EVESpai(callbacks.Plugin):
             location = self._get_location(locationID)
         except:
             irc.error('Unknown location')
+            return
 
         sp = self.stationspinner.cursor(cursor_factory=psycopg2.extras.DictCursor)
         sp.execute("""
@@ -596,6 +595,28 @@ class EVESpai(callbacks.Plugin):
     price = wrap(price, [getopts({'location': 'text'}),
                                     'text'])
 
+    def markets(self, irc, msg, args):
+        """
+        List all price indexed markets.
+        """
+        sp = self.stationspinner.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        sp.execute("""
+        SELECT "locationID" FROM evecentral_market""")
+        locationIDs = sp.fetchall()
+        if len(locationIDs) == 0:
+            irc.reply('No prices have been indexed yet.', prefixNick=False)
+            return
+        output = []
+        for locationID in locationIDs:
+            locationID = locationID[0]
+            location = self._get_location(locationID)
+            if locationID < 30000000:
+                # This would be a region
+                output.append(ircutils.bold(location['itemName']))
+            else:
+                output.append(self._colorize_system(location))
+        irc.reply(', '.join(output), prefixNick=False)
+    markets = wrap(markets)
 
 
 
