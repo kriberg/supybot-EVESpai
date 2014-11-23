@@ -37,6 +37,7 @@ import supybot.conf as conf
 
 import psycopg2
 import psycopg2.extras
+import psycopg2.pool
 import eveapi
 import datetime
 
@@ -61,8 +62,9 @@ class EVESpai(callbacks.Plugin):
         self._connect(irc)
 
     def _connect(self, irc):
+
         try:
-            self.stationspinner = psycopg2.connect(
+            self.stationspinner = psycopg2.pool.ThreadedConnectionPool(2, 20,
                 host=self.registryValue('stationspinner_host'),
                 port=self.registryValue('stationspinner_port'),
                 dbname=self.registryValue('stationspinner_database'),
@@ -71,7 +73,7 @@ class EVESpai(callbacks.Plugin):
         except Exception, e:
             irc.error('Could not connect to stationspinner database. "{0}"'.format(e))
         try:
-            self.sde = psycopg2.connect(
+            self.sde = psycopg2.pool.ThreadedConnectionPool(2, 20,
                 host=self.registryValue('sde_host'),
                 port=self.registryValue('sde_port'),
                 dbname=self.registryValue('sde_database'),
@@ -83,7 +85,7 @@ class EVESpai(callbacks.Plugin):
         if self.registryValue('corporation') == '':
             irc.error('EVESpai requires that you set a corporation')
         try:
-            cur = self.stationspinner.cursor()
+            cur = self.stationspinner.getconn().cursor()
             cur.execute("""
             SELECT "corporationID"
             FROM corporation_corporationsheet
@@ -94,60 +96,53 @@ class EVESpai(callbacks.Plugin):
         except Exception, e:
             irc.error('Could not find corporation "{0}" in stationspinner database'.format(self.corporation))
 
-    def _get_SolarSystemID(self, system_name):
-        cur = self.sde.cursor()
-        cur.execute("""SELECT "solarSystemID" FROM "mapSolarSystems"
-        WHERE "solarSystemName" ILIKE %s """, [system_name])
-        row = cur.fetchone()[0]
+    def _sql(self, sql, argslist, single=True, db='stationspinner'):
+        conn = getattr(self, db).getconn()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+
+        cur.execute(sql, argslist)
+        if single:
+            data = cur.fetchone()
+        else:
+            data = cur.fetchall()
         cur.close()
-        return row
+        getattr(self, db).putconn(conn)
+        return data
+
+
+    def _get_SolarSystemID(self, system_name):
+        row = self._sql("""SELECT "solarSystemID" FROM "mapSolarSystems"
+        WHERE "solarSystemName" ILIKE %s """, [system_name], db='sde')
+        return row['solarSystemID']
 
     def _get_SolarSystem(self, solarSystemID):
-        cur = self.sde.cursor(cursor_factory=psycopg2.extras.DictCursor)
-        cur.execute("""SELECT * FROM "mapSolarSystems"
-        WHERE "solarSystemID" = %s""", [solarSystemID])
-        row = cur.fetchone()
-        cur.close()
+        row = self._sql("""SELECT * FROM "mapSolarSystems"
+        WHERE "solarSystemID" = %s""", [solarSystemID], db='sde')
         return row
 
     def _get_locationID(self, location_name):
-        cur = self.sde.cursor()
-        cur.execute("""SELECT "itemID" FROM "mapDenormalize"
-        WHERE "itemName" ILIKE %s""", [location_name])
-        row = cur.fetchone()[0]
-        cur.close()
-        return row
+        row = self._sql("""SELECT "itemID" FROM "mapDenormalize"
+        WHERE "itemName" ILIKE %s""", [location_name], db='sde')
+        return row['itemID']
 
     def _get_location(self, locationID):
-        cur = self.sde.cursor(cursor_factory=psycopg2.extras.DictCursor)
-        cur.execute("""SELECT * FROM "mapDenormalize"
-        WHERE "itemID"=%s""", [locationID])
-        row= cur.fetchone()
-        cur.close()
+        row = self._sql("""SELECT * FROM "mapDenormalize"
+        WHERE "itemID"=%s""", [locationID], db='sde')
         return row
 
     def _get_location_by_name(self, locationName):
-        cur = self.sde.cursor(cursor_factory=psycopg2.extras.DictCursor)
-        cur.execute("""SELECT * FROM "mapDenormalize"
-        WHERE "itemName" ILIKE %s""", [locationName])
-        row= cur.fetchone()
-        cur.close()
+        row = self._sql("""SELECT * FROM "mapDenormalize"
+        WHERE "itemName" ILIKE %s""", [locationName], db='sde')
         return row
 
     def _get_typeID(self, type_name):
-        cur = self.sde.cursor(cursor_factory=psycopg2.extras.DictCursor)
-        cur.execute("""SELECT "typeID" FROM "invTypes"
-        WHERE "typeName" ILIKE %s""", [type_name])
-        row= cur.fetchone()[0]
-        cur.close()
-        return row
+        row = self._sql("""SELECT "typeID" FROM "invTypes"
+        WHERE "typeName" ILIKE %s""", [type_name], db='sde')
+        return row['typeID']
 
     def _get_type(self, typeID):
-        cur = self.sde.cursor(cursor_factory=psycopg2.extras.DictCursor)
-        cur.execute("""SELECT * FROM "invTypes"
-        WHERE "typeID" = %s""", [typeID])
-        row= cur.fetchone()
-        cur.close()
+        row = self._sql("""SELECT * FROM "invTypes"
+        WHERE "typeID" = %s""", [typeID], db='sde')
         return row
 
     def _colorize_system(self, location):
@@ -174,8 +169,8 @@ class EVESpai(callbacks.Plugin):
         Get locationID for a location
         """
         try:
-            name = self._get_locationID(locationName)
-            irc.reply(name, prefixNick=False)
+            locationID = self._get_locationID(locationName)
+            irc.reply(locationID, prefixNick=False)
         except:
             irc.error('Unknown location')
 
@@ -214,7 +209,7 @@ class EVESpai(callbacks.Plugin):
         """
         try:
             typeID = self._get_typeID(typeName)
-            irc.reply(typeID)
+            irc.reply(typeID, prefixNick=False)
         except:
             irc.error('Unknown type')
 
@@ -250,7 +245,6 @@ class EVESpai(callbacks.Plugin):
             irc.reply('Concord denies you access on this channel!')
             return
 
-        sp = self.stationspinner.cursor(cursor_factory=psycopg2.extras.DictCursor)
         if system:
             try:
                 locationID = self._get_locationID(system)
@@ -259,20 +253,18 @@ class EVESpai(callbacks.Plugin):
                 irc.error('Unknown location')
                 return
 
-            sp.execute("""
+            rows = self._sql("""
             SELECT *
             FROM corporation_starbase
             WHERE owner_id = %s AND "locationID" = %s""", [self.corporationID,
-                                                         locationID])
+                                                         locationID], single=False)
         else:
-            sp.execute("""
+            rows = self._sql("""
             SELECT *
             FROM corporation_starbase
             WHERE owner_id = %s
-            ORDER BY "locationID", "moonID" """, [self.corporationID])
-        rows = sp.fetchall()
-        count = sp.rowcount
-        sp.close()
+            ORDER BY "locationID", "moonID" """, [self.corporationID], single=False)
+        count = len(rows)
 
         STATES = {
             0: 	ircutils.mircColor('Unanchored', fg='teal'),           # Also unanchoring? Has valid stateTimestamp.
@@ -318,7 +310,6 @@ class EVESpai(callbacks.Plugin):
                              state #offline/online
                              ), prefixNick=False)
 
-
     pos = wrap(pos, [optional('channel'), optional('text')])
 
     def whereis(self, irc, msg, args, channel, character):
@@ -330,13 +321,9 @@ class EVESpai(callbacks.Plugin):
             irc.reply('Concord denies you access on this channel!')
             return
 
-        sp = self.stationspinner.cursor(cursor_factory=psycopg2.extras.DictCursor)
-
-        sp.execute("""
+        rows = self._sql("""
         SELECT * FROM corporation_membertracking
-        WHERE name ILIKE %s AND owner_id=%s""", [character, self.corporationID])
-
-        rows = sp.fetchall()
+        WHERE name ILIKE %s AND owner_id=%s""", [character, self.corporationID], single=False)
 
         if len(rows) > 0:
             for row in rows:
@@ -346,7 +333,7 @@ class EVESpai(callbacks.Plugin):
                     ship = row['shipType']
                 irc.reply('{0} :: {1} :: {2}'.format(
                     ircutils.bold(row['name']),
-                    self._colorize_system(self._get_location_by_name(row['location'])),
+                    row['location'],
                     ship
                 ), prefixNick=False)
         else:
@@ -362,21 +349,23 @@ class EVESpai(callbacks.Plugin):
             irc.reply('Concord denies you access on this channel!')
             return
 
-        sp = self.stationspinner.cursor(cursor_factory=psycopg2.extras.DictCursor)
-        sp.execute("""SELECT * FROM universe_apicall
+        call = self._sql("""SELECT * FROM universe_apicall
         WHERE name ILIKE %s AND type='Corporation'""", [apicall])
-        if sp.rowcount != 1:
-            irc.error('Could not find a unique apicall for "{0}"'.format(apicall))
+        if not call:
+            irc.error('Unknown APICall')
             return
         else:
-            call = sp.fetchone()
-            sp.execute("""
+            update = self._sql("""
             SELECT * FROM accounting_apiupdate
             WHERE apicall_id=%s AND owner = %s""", [call['id'], self.corporationID])
-            update= sp.fetchone()
-            irc.reply('{0} last updated {1}'.format(
+
+            if not update['last_update']:
+                updated = 'never'
+            else:
+                updated = update['last_update']
+            irc.reply('{0} last updated: {1}'.format(
                 call['name'],
-                update['last_update']
+                updated
             ), prefixNick=False)
     cache = wrap(cache, [optional('channel'), 'text'])
 
@@ -390,15 +379,15 @@ class EVESpai(callbacks.Plugin):
             irc.reply('Concord denies you access on this channel!')
             return
 
-        sp = self.stationspinner.cursor(cursor_factory=psycopg2.extras.DictCursor)
-
-
-        sp.execute("""
+        rows = self._sql("""
         SELECT * FROM corporation_membertracking
         WHERE location ILIKE %s AND owner_id=%s""", ['%%{0}%%'.format(system),
-                                                     self.corporationID])
-
-        rows = sp.fetchall()
+                                                     self.corporationID], single=False)
+        if len(rows) == 0:
+            irc.reply('Found 0 characters in "{0}"'.format(
+                system
+            ), prefixNick=False)
+            return
 
         if len(rows) <= self.registryValue('max_lines', channel) or ('all', True) in optlist \
                 and len(rows) > 0:
@@ -416,10 +405,7 @@ class EVESpai(callbacks.Plugin):
             irc.reply('Found {0} characters in "{1}", but will not name them all'.format(
                 len(rows), system
             ), prefixNick=False)
-        else:
-            irc.reply('Found 0 characters in "{0}"'.format(
-                system
-            ), prefixNick=False)
+
     whoat = wrap(whoat, [optional('channel'),
                          getopts({'all': ''}),
                          'text'])
@@ -433,41 +419,46 @@ class EVESpai(callbacks.Plugin):
         if not self.registryValue('full_access', channel):
             irc.reply('Concord denies you access on this channel!')
             return
-        print optlist
 
-        sp = self.stationspinner.cursor(cursor_factory=psycopg2.extras.DictCursor)
-        sde = self.sde.cursor(cursor_factory=psycopg2.extras.DictCursor)
-        sde.execute("""
+        rows = self._sql("""
         SELECT "groupID", "groupName" FROM "invGroups"
-        WHERE "categoryID"=6 and "groupName" ILIKE %s""", ['%%{0}%%'.format(shiptype)])
-        rows = sde.fetchall()
-        if len(rows) == 0:
-            irc.reply('Unknown shiptype', prefixNick=False)
-            return
-        elif len(rows) > 1:
+        WHERE "categoryID"=6 and "groupName" ILIKE %s""", ['%%{0}%%'.format(shiptype)], db='sde', single=False)
+
+        if len(rows) > 1:
             irc.reply('Found more than one shiptype: "{0}". Be more specific'.format(
                 [r['groupName'] for r in rows]
             ), prefixNick=False)
             return
 
-        shiptype = rows[0]
-        #find the ships which match the groupID of the ship type
-        sde.execute("""
-        SELECT "typeID", "typeName" FROM "invTypes"
-        WHERE "groupID"=%s AND published=true""", [shiptype['groupID']])
-        ships = sde.fetchall()
-        typeIDs = [s['typeID'] for s in ships]
-        sp.execute("""
+        if len(rows) == 1:
+            invGroup = rows[0]
+            #find the ships which match the groupID of the ship type
+            ships = self._sql("""
+            SELECT "typeID", "typeName" FROM "invTypes"
+            WHERE "groupID"=%s AND published=true""", [invGroup['groupID']], db='sde', single=False)
+            typeIDs = [s['typeID'] for s in ships]
+        else:
+            # There was no group matching that name, but it could be a specific ship
+            invGroup = None
+            row = self._get_typeID('%%{0}%%'.format(shiptype))
+            if row:
+                typeIDs = [row,]
+                shiptype = self._get_type(row)['typeName']
+            else:
+                irc.reply('Unknown shiptype', prefixNick=False)
+                return
+
+
+        rows = self._sql("""
         SELECT * FROM corporation_membertracking
         WHERE owner_id=%s AND "shipTypeID" IN %s""",
-                   [self.corporationID, tuple(typeIDs)])
-        rows = sp.fetchall()
+                   [self.corporationID, tuple(typeIDs)], single=False)
 
         if (len(rows) <= self.registryValue('max_lines', channel) or ('all', True) in optlist) \
                 and len(rows) > 0:
             irc.reply('Found {0} characters in {1}'.format(
                 len(rows),
-                shiptype['groupName']
+                invGroup['groupName']
             ), prefixNick=False)
             for row in rows:
                 if row['shipType'] == 'Unknown Type':
@@ -482,18 +473,21 @@ class EVESpai(callbacks.Plugin):
         elif len(rows) > self.registryValue('max_lines', channel):
             irc.reply('Found {0} characters in {1}, but will not name them all'.format(
                 len(rows),
-                shiptype['groupName']
+                invGroup['groupName']
             ), prefixNick=False)
         else:
+            if invGroup:
+                shiptype = invGroup['groupName']
+
             irc.reply('Found {0} characters in {1}'.format(
                 len(rows),
-                shiptype['groupName']
+                shiptype
             ), prefixNick=False)
     ship = wrap(ship, [optional('channel'),
                        getopts({'all': ''}),
                                'text'])
 
-    def chars(self, irc, msg, args, channel, user):
+    def chars(self, irc, msg, args, channel, username):
         """[<channel>] <user>
 
         List all characters belonging to <user>
@@ -502,21 +496,16 @@ class EVESpai(callbacks.Plugin):
             irc.reply('Concord denies you access on this channel!')
             return
 
-        sp = self.stationspinner.cursor(cursor_factory=psycopg2.extras.DictCursor)
-        sp.execute("""
+        user = self._sql("""
         SELECT * FROM accounting_capsuler
-        WHERE username=%s""", [user])
-        if not sp.rowcount == 1:
-            irc.error('Could not find user "{0}"'.format(user))
+        WHERE username=%s""", [username])
+        if not user:
+            irc.error('Could not find user "{0}"'.format(username))
             return
-        else:
-            user = sp.fetchone()
 
-        sp.execute("""
+        chars = self._sql("""
         SELECT * FROM character_charactersheet
-        WHERE owner_id=%s""", [user['id']])
-
-        chars = sp.fetchall()
+        WHERE owner_id=%s""", [user['id']], single=False)
 
         if len(chars) == 0:
             irc.reply('User "{0}" has 0 characters registered'.format(user['username']),
@@ -539,7 +528,6 @@ class EVESpai(callbacks.Plugin):
 
         Get price of an item at Jita or at a specific solar system/region.
         """
-        print optlist
 
         try:
             typeID = self._get_typeID(typeName)
@@ -560,19 +548,16 @@ class EVESpai(callbacks.Plugin):
             irc.error('Unknown location')
             return
 
-        sp = self.stationspinner.cursor(cursor_factory=psycopg2.extras.DictCursor)
-        sp.execute("""
+        market = self._sql("""
         SELECT * FROM evecentral_market
         WHERE "locationID"=%s""", [locationID])
-        market = sp.fetchone()
         if not market:
             irc.reply('No data for that market location')
             return
 
-        sp.execute("""
+        marketitem = self._sql("""
         SELECT * FROM evecentral_marketitem
         WHERE "locationID"=%s AND "typeID"=%s""", [locationID, typeID])
-        marketitem = sp.fetchone()
         if marketitem:
             irc.reply('{0} in {1}: buy max: {2} (volume: {3:,d}). sell min: {4} (volume: {5:,d}).'.format(
                 ircutils.bold(itemType['typeName']),
@@ -599,10 +584,8 @@ class EVESpai(callbacks.Plugin):
         """
         List all price indexed markets.
         """
-        sp = self.stationspinner.cursor(cursor_factory=psycopg2.extras.DictCursor)
-        sp.execute("""
-        SELECT "locationID" FROM evecentral_market""")
-        locationIDs = sp.fetchall()
+        locationIDs = self._sql("""
+        SELECT "locationID" FROM evecentral_market""", None, single=False)
         if len(locationIDs) == 0:
             irc.reply('No prices have been indexed yet.', prefixNick=False)
             return
