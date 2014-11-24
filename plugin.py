@@ -618,7 +618,7 @@ class EVESpai(callbacks.Plugin):
         'markets' List all price indexed markets.
         """
         for line in desc.splitlines():
-            irc.reply(line, prefixNick=False)
+            irc.reply(line.strip(), prefixNick=False)
 
     evecommands = wrap(evecommands)
 
