@@ -605,8 +605,7 @@ class EVESpai(callbacks.Plugin):
         """
         Prints an overview of available commands
         """
-        desc = """
-        EVESpai commands:
+        desc = """EVESpai commands:
         'pos [<system>]' Lists all POSes.
         'evetime' Get current time on Tranquility.
         'whereis <character>' List the location and currently boarded ship of <character>.
