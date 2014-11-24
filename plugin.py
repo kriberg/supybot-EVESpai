@@ -617,7 +617,7 @@ class EVESpai(callbacks.Plugin):
         'price [--location=(<solarsystem>|<region>)] <typeName>' List buy/sell/volume of <type> in <location>, defaults to JIta.
         'markets' List all price indexed markets.
         """
-        for line in desc.split():
+        for line in desc.splitlines():
             irc.reply(line, prefixNick=False)
 
     evecommands = wrap(evecommands)
