@@ -605,17 +605,17 @@ class EVESpai(callbacks.Plugin):
         """
         Prints an overview of available commands
         """
-        desc = """EVESpai commands:
-        'evecommands' List available commands.
-        'pos [<system>]' Lists all POSes.
-        'evetime' Get current time on Tranquility.
-        'whereis <character>' List the location and currently boarded ship of <character>.
-        'cache <calltype>' List the cache time of given call type.
-        'whoat <system>' List characters and their ships in <system>. If --all is given, ignore the max lines limitation.
-        'ship <shiptype>' List characters in <shiptype>.
-        'chars <user>' List all characters belonging to <user>
-        'price [--location=(<solarsystem>|<region>)] <typeName>' List buy/sell/volume of <type> in <location>, defaults to Jita.
-        'markets' List all price indexed markets."""
+        desc = "\n".join(("EVESpai commands:",
+                         "{0} {1}".format(ircutils.bold("'evecommands'"), "List available commands."),
+                         "{0} {1}".format(ircutils.bold("'pos [<system>]'"), "Lists all POSes."),
+                         "{0} {1}".format(ircutils.bold("'evetime'"), "Get current time on Tranquility."),
+                         "{0} {1}".format(ircutils.bold("'whereis <character>'"), "List the location and currently boarded ship of <character>."),
+                         "{0} {1}".format(ircutils.bold("'cache <calltype>'"), "List the cache time of given call type."),
+                         "{0} {1}".format(ircutils.bold("'whoat <system>'"), "List characters and their ships in <system>. If --all is given, ignore the max lines limitation."),
+                         "{0} {1}".format(ircutils.bold("'ship <shiptype>'"), "List characters in <shiptype>."),
+                         "{0} {1}".format(ircutils.bold("'chars <user>'"), "List all cha)racters belonging to <user>"),
+                         "{0} {1}".format(ircutils.bold("'price [--location=(<solarsystem>|<region>)] <typeName>'"), "List buy/sell/volume of <type> in <location>, defaults to Jita."),
+                         "{0} {1}".format(ircutils.bold("'markets'"), "List all price indexed markets.")))
 
         for line in desc.splitlines():
             irc.reply(line.strip(), prefixNick=False)
