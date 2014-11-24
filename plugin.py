@@ -601,6 +601,27 @@ class EVESpai(callbacks.Plugin):
         irc.reply(', '.join(output), prefixNick=False)
     markets = wrap(markets)
 
+    def evecommands(self, irc, msg, args):
+        """
+        Prints an overview of available commands
+        """
+        desc = """
+        EVESpai commands:
+        'pos [<system>]' Lists all POSes.
+        'evetime' Get current time on Tranquility.
+        'whereis <character>' List the location and currently boarded ship of <character>.
+        'cache <calltype>' List the cache time of given call type.
+        'whoat <system>' List characters and their ships in <system>. If --all is given, ignore the max lines limitation.
+        'ship <shiptype>' List characters in <shiptype>.
+        'chars <user>' List all characters belonging to <user>
+        'price [--location=(<solarsystem>|<region>)] <typeName>' List buy/sell/volume of <type> in <location>, defaults to JIta.
+        'markets' List all price indexed markets.
+        """
+        for line in desc.split():
+            irc.reply(line, prefixNick=False)
+
+    evecommands = wrap(evecommands)
+
 
 
 
