@@ -606,6 +606,7 @@ class EVESpai(callbacks.Plugin):
         Prints an overview of available commands
         """
         desc = """EVESpai commands:
+        'evecommands' List available commands.
         'pos [<system>]' Lists all POSes.
         'evetime' Get current time on Tranquility.
         'whereis <character>' List the location and currently boarded ship of <character>.
@@ -613,9 +614,9 @@ class EVESpai(callbacks.Plugin):
         'whoat <system>' List characters and their ships in <system>. If --all is given, ignore the max lines limitation.
         'ship <shiptype>' List characters in <shiptype>.
         'chars <user>' List all characters belonging to <user>
-        'price [--location=(<solarsystem>|<region>)] <typeName>' List buy/sell/volume of <type> in <location>, defaults to JIta.
+        'price [--location=(<solarsystem>|<region>)] <typeName>' List buy/sell/volume of <type> in <location>, defaults to Jita.
         'markets' List all price indexed markets."""
-        
+
         for line in desc.splitlines():
             irc.reply(line.strip(), prefixNick=False)
 
