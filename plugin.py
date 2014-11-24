@@ -614,8 +614,8 @@ class EVESpai(callbacks.Plugin):
         'ship <shiptype>' List characters in <shiptype>.
         'chars <user>' List all characters belonging to <user>
         'price [--location=(<solarsystem>|<region>)] <typeName>' List buy/sell/volume of <type> in <location>, defaults to JIta.
-        'markets' List all price indexed markets.
-        """
+        'markets' List all price indexed markets."""
+        
         for line in desc.splitlines():
             irc.reply(line.strip(), prefixNick=False)
 
