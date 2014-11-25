@@ -523,6 +523,40 @@ class EVESpai(callbacks.Plugin):
             ), prefixNick=False)
     chars = wrap(chars, [optional('channel'), 'text'])
 
+    def owner(self, irc, msg, args, channel, optlist, character):
+        """[<channel>] <character>
+
+        List username of those who own *<character>*"""
+        if not self.registryValue('full_access', channel):
+            irc.reply('Concord denies you access on this channel!')
+            return
+
+        chars = self._sql("""
+        SELECT c.username, s.name AS character FROM accounting_capsuler c, character_charactersheet s
+        WHERE s.owner_id=c.id and s.name ILIKE %s;""", ['%%{0}%%'.format(character)], single=False)
+
+        if len(chars) == 0:
+            irc.reply('Found 0 characters like "{0}"'.format(character), prefixNick=False)
+            return
+
+        if (len(chars) <= self.registryValue('max_lines', channel) or ('all', True) in optlist) \
+                and len(chars) > 0:
+            for char in chars:
+                irc.reply('{0} :: {1}'.format(
+                    ircutils.bold(char['username']),
+                    ircutils.bold(char['character'])
+                ), prefixNick=False)
+        elif len(chars) > self.registryValue('max_lines', channel):
+            irc.reply('Found {0} characters matching "{1}", but will list them all unless you use "owner --all {1}".'.format(
+                len(chars),
+                character,
+            ), prefixNick=False)
+
+    owner = wrap(owner, [optional('channel'),
+                       getopts({'all': ''}),
+                               'text'])
+
+
     def price(self, irc, msg, args, optlist, typeName):
         """[--location=(<solarsystem>|<region>)] <typeName>
 
@@ -615,7 +649,8 @@ class EVESpai(callbacks.Plugin):
                          "{0} {1}".format(ircutils.bold("'ship <shiptype>'"), "List characters in <shiptype>."),
                          "{0} {1}".format(ircutils.bold("'chars <user>'"), "List all cha)racters belonging to <user>"),
                          "{0} {1}".format(ircutils.bold("'price [--location=(<solarsystem>|<region>)] <typeName>'"), "List buy/sell/volume of <type> in <location>, defaults to Jita."),
-                         "{0} {1}".format(ircutils.bold("'markets'"), "List all price indexed markets.")))
+                         "{0} {1}".format(ircutils.bold("'markets'"), "List all price indexed markets."),
+                         "{0} {1}".format(ircutils.bold("'owner <character>'"), "List username of those who own *<character>*")))
 
         for line in desc.splitlines():
             irc.reply(line.strip(), prefixNick=False)
