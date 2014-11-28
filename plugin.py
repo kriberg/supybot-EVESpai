@@ -538,7 +538,7 @@ class EVESpai(callbacks.Plugin):
             ), prefixNick=False)
     chars = wrap(chars, [optional('channel'), 'text'])
 
-    def owner(self, irc, msg, args, channel, optlist, character):
+    def player(self, irc, msg, args, channel, optlist, character):
         """[<channel>] <character>
 
         List username of those who own *<character>*"""
@@ -567,7 +567,7 @@ class EVESpai(callbacks.Plugin):
                 character,
             ), prefixNick=False)
 
-    owner = wrap(owner, [optional('channel'),
+    player = wrap(player, [optional('channel'),
                        getopts({'all': ''}),
                                'text'])
 
@@ -665,7 +665,7 @@ class EVESpai(callbacks.Plugin):
                          "{0} {1}".format(ircutils.bold("'chars <user>'"), "List all cha)racters belonging to <user>"),
                          "{0} {1}".format(ircutils.bold("'price [--location=(<solarsystem>|<region>)] <typeName>'"), "List buy/sell/volume of <type> in <location>, defaults to Jita."),
                          "{0} {1}".format(ircutils.bold("'markets'"), "List all price indexed markets."),
-                         "{0} {1}".format(ircutils.bold("'owner <character>'"), "List username of those who own *<character>*")))
+                         "{0} {1}".format(ircutils.bold("'player <character>'"), "List username of those who own *<character>*")))
 
         for line in desc.splitlines():
             irc.reply(line.strip(), prefixNick=False)
