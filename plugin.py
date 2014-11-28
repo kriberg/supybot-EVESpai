@@ -128,11 +128,23 @@ class EVESpai(callbacks.Plugin):
     def _get_location(self, locationID):
         row = self._sql("""SELECT * FROM "mapDenormalize"
         WHERE "itemID"=%s""", [locationID], db='sde')
+
         return row
 
     def _get_location_by_name(self, locationName):
         row = self._sql("""SELECT * FROM "mapDenormalize"
         WHERE "itemName" ILIKE %s""", [locationName], db='sde')
+        if not row:
+            station = self._sql(""" SELECT * FROM universe_conquerablestation
+            WHERE "stationName" ILIKE %s""", [locationName])
+            row = {'itemName': station['stationName']}
+            solarsystem = self._sql("""SELECT * FROM "mapDenormalize"
+             WHERE "itemID"=%s""", [station['solarSystemID']], db='sde')
+
+            if not solarsystem:
+                row['security'] = 0.0
+            else:
+                row['security'] = solarsystem['security']
         return row
 
     def _get_typeID(self, type_name):
@@ -146,7 +158,10 @@ class EVESpai(callbacks.Plugin):
         return row
 
     def _colorize_system(self, location):
-        security = location['security']
+        try:
+            security = location['security']
+        except:
+            security = 0.0
         if 'solarSystemName' in location:
             name = location['solarSystemName']
         else:
@@ -333,7 +348,7 @@ class EVESpai(callbacks.Plugin):
                     ship = row['shipType']
                 irc.reply('{0} :: {1} :: {2}'.format(
                     ircutils.bold(row['name']),
-                    row['location'],
+                    self._colorize_system(self._get_location_by_name(row['location'])),
                     ship
                 ), prefixNick=False)
         else:
