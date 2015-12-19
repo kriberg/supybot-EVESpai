@@ -681,7 +681,7 @@ class EVESpai(callbacks.Plugin):
         SELECT
             "typeName",
             "locationName",
-            SUM("itemID") as amount
+            SUM("quantity") as amount
         FROM
             corporation_asset
         WHERE
