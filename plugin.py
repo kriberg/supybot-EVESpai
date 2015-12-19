@@ -681,7 +681,7 @@ class EVESpai(callbacks.Plugin):
         SELECT
             "typeName",
             "locationName",
-            COUNT("itemID") as amount
+            SUM("itemID") as amount
         FROM
             corporation_asset
         WHERE
@@ -701,12 +701,11 @@ class EVESpai(callbacks.Plugin):
             irc.reply('Found 0 items at that location')
             return
         for row in rows:
-            print row
             location = self._get_location_by_name(row['locationName'])
             irc.reply('{0} :: {1} :: {2}'.format(
                 row['typeName'],
                 self._colorize_system(location),
-                ircutils.bold(row['amount'])
+                ircutils.bold('{:,f}'.format(row['amount']))
             ), prefixNick=False)
 
     howmany = wrap(howmany, [
