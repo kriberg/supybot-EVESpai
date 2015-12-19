@@ -41,6 +41,9 @@ import psycopg2.pool
 import eveapi
 import datetime
 
+class UnknownLocation(BaseException):
+    pass
+
 
 class EVESpai(callbacks.Plugin):
     """
@@ -110,6 +113,8 @@ class EVESpai(callbacks.Plugin):
         return data
 
 
+
+
     def _get_SolarSystemID(self, system_name):
         row = self._sql("""SELECT "solarSystemID" FROM "mapSolarSystems"
         WHERE "solarSystemName" ILIKE %s """, [system_name], db='sde')
@@ -118,6 +123,8 @@ class EVESpai(callbacks.Plugin):
     def _get_SolarSystem(self, solarSystemID):
         row = self._sql("""SELECT * FROM "mapSolarSystems"
         WHERE "solarSystemID" = %s""", [solarSystemID], db='sde')
+        if not row:
+            raise UnknownLocation(solarSystemID)
         return row
 
     def _get_locationID(self, location_name):
@@ -128,7 +135,8 @@ class EVESpai(callbacks.Plugin):
     def _get_location(self, locationID):
         row = self._sql("""SELECT * FROM "mapDenormalize"
         WHERE "itemID"=%s""", [locationID], db='sde')
-
+        if not row:
+            raise UnknownLocation(locationID)
         return row
 
     def _get_location_by_name(self, locationName):
@@ -149,12 +157,12 @@ class EVESpai(callbacks.Plugin):
 
     def _get_typeID(self, type_name):
         row = self._sql("""SELECT "typeID" FROM "invTypes"
-        WHERE "typeName" ILIKE %s""", [type_name], db='sde')
+        WHERE "typeName" ILIKE %s AND published=true""", [type_name], db='sde')
         return row['typeID']
 
     def _get_type(self, typeID):
         row = self._sql("""SELECT * FROM "invTypes"
-        WHERE "typeID" = %s""", [typeID], db='sde')
+        WHERE "typeID" = %s AND published=true""", [typeID], db='sde')
         return row
 
     def _colorize_system(self, location):
@@ -301,21 +309,33 @@ class EVESpai(callbacks.Plugin):
             irc.reply('Found {0} starbases'.format(count), prefixNick=False)
 
         for row in rows:
+            locationID = int(row['locationID'])
             try:
                 state = STATES[int(row['state'])]
             except:
                 state = 'Unknown'
-            if not row['locationID'] in locations:
-                solar_system = self._get_SolarSystem(row['locationID'])
-                locations[solar_system['solarSystemID']] = solar_system
+            if not locationID in locations:
+                try:
+                    solar_system = self._get_SolarSystem(locationID)
+                    locations[locationID] = solar_system
+                except UnknownLocation:
+                    irc.reply('{0} :: {1} :: {2} :: {3} :: {4}'.format(
+                                     'Unknown region',
+                                     'Unknown solarsystem {0}'.format(locationID), #solarsystem
+                                     'n/a', #moon
+                                     self._get_type(int(row['typeID']))['typeName'], #pos type
+                                     state #offline/online
+                                     ), prefixNick=False)
+                    continue
             else:
-                solar_system = locations[row['locationID']]
+                solar_system = locations[locationID]
 
             if not solar_system['regionID'] in locations:
                 region = self._get_location(solar_system['regionID'])
                 locations[solar_system['regionID']] = region
             else:
                 region = locations[solar_system['regionID']]
+
 
             irc.reply('{0} :: {1} :: {2} :: {3} :: {4}'.format(
                              region['itemName'],
@@ -437,7 +457,7 @@ class EVESpai(callbacks.Plugin):
 
         rows = self._sql("""
         SELECT "groupID", "groupName" FROM "invGroups"
-        WHERE "categoryID"=6 and "groupName" ILIKE %s""", ['%%{0}%%'.format(shiptype)], db='sde', single=False)
+        WHERE "categoryID"=6 and "groupName" ILIKE %s AND published=true""", ['%%{0}%%'.format(shiptype)], db='sde', single=False)
 
         if len(rows) > 1:
             irc.reply('Found more than one shiptype: "{0}". Be more specific'.format(
@@ -649,6 +669,52 @@ class EVESpai(callbacks.Plugin):
                 output.append(self._colorize_system(location))
         irc.reply(', '.join(output), prefixNick=False)
     markets = wrap(markets)
+
+    def howmany(self, irc, msg, args, channel, typeName, locationName):
+        """[<channel>] <typeName> <locationName>
+        List how many items matching <typeName> at location matching <locationName>.
+        """
+        if not self.registryValue('full_access', channel):
+            irc.reply('Concord denies you access on this channel!')
+            return
+        rows = self._sql("""
+        SELECT
+            "typeName",
+            "locationName",
+            COUNT("itemID") as amount
+        FROM
+            corporation_asset
+        WHERE
+            "typeName" ILIKE %s AND
+            "locationName" ILIKE %s AND
+            owner_id = %s
+        GROUP BY
+            "typeName",
+            "locationName"
+        """, [
+            '%%{0}%%'.format(typeName),
+            '%%{0}%%'.format(locationName),
+            self.corporationID
+        ], single=False)
+
+        if len(rows) == 0:
+            irc.reply('Found 0 items at that location')
+            return
+        for row in rows:
+            print row
+            location = self._get_location_by_name(row['locationName'])
+            irc.reply('{0} :: {1} :: {2}'.format(
+                row['typeName'],
+                self._colorize_system(location),
+                ircutils.bold(row['amount'])
+            ), prefixNick=False)
+
+    howmany = wrap(howmany, [
+        optional('channel'),
+        'something',
+        'something'
+    ])
+
 
     def evecommands(self, irc, msg, args):
         """
