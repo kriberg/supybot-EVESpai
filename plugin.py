@@ -670,6 +670,32 @@ class EVESpai(callbacks.Plugin):
         irc.reply(', '.join(output), prefixNick=False)
     markets = wrap(markets)
 
+    def meinshekels(self, irc, msg, args):
+        """
+        List top krabs
+        """
+        rows = self._sql("""
+                SELECT t.username, t.sum FROM (SELECT DISTINCT ON (u.username)
+                u.username, SUM(j.amount) from corporation_walletjournal j
+                  RIGHT OUTER JOIN character_charactersheet c ON
+                  c."characterID"=j."ownerID2"
+                    RIGHT OUTER JOIN accounting_capsuler u ON u.id=c.owner_id
+                    WHERE j."refTypeID" IN (85, 99) AND j.date > CURRENT_DATE -
+                    INTERVAL '1 month' AND j.owner_id=%s
+                    GROUP BY u.username, j.amount) t ORDER BY t.sum DESC LIMIT
+                    5;
+            """, [self.corporationID], single=False)
+        print rows
+        if len(rows) == 0:
+            irc.reply('No bounties registered for last 30 days.')
+        else:
+            irc.reply('Top krabs:', prefixNick=False)
+            for row in rows:
+                irc.reply('{0}{1:>20}'.format(
+                    ircutils.bold('{:<20}'.format(row['username'])),
+                    '{:,}'.format(row['sum'])), prefixNick=False)
+    meinshekels = wrap(meinshekels)
+
     def howmany(self, irc, msg, args, channel, typeName, locationName):
         """[<channel>] <typeName> <locationName>
         List how many items matching <typeName> at location matching <locationName>.
